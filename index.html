@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Energy Consumption Predictor</title>
+  <meta name="description"
+    content="Upload campus energy CSV and get AI-powered 7-day forecasts, anomaly detection, and model comparison." />
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          animation: { 'pulse-slow': 'pulse 3s ease-in-out infinite', 'float': 'float 4s ease-in-out infinite' },
+          keyframes: { float: { '0%,100%': { transform: 'translateY(0)' }, '50%': { transform: 'translateY(-8px)' } } }
+        }
+      }
+    }
+  </script>
+
+  <!-- Plotly.js -->
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+
+  <!-- Google Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+    rel="stylesheet" />
+
+  <style>
+    * {
+      font-family: 'Inter', sans-serif;
+      box-sizing: border-box;
+    }
+
+    .gradient-text {
+      background: linear-gradient(135deg, #6366F1, #22D3EE, #34D399);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .glass {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(12px);
+    }
+
+    .drop-zone {
+      border: 2px dashed rgba(99, 102, 241, 0.4);
+      transition: all .3s ease;
+    }
+
+    .drop-zone.dragging {
+      border-color: #6366F1;
+      background: rgba(99, 102, 241, 0.12);
+      transform: scale(1.01);
+    }
+
+    .loader-ring {
+      width: 56px;
+      height: 56px;
+      border: 5px solid rgba(99, 102, 241, 0.2);
+      border-top-color: #6366F1;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .progress-fill {
+      animation: progress 3s ease-in-out forwards;
+    }
+
+    @keyframes progress {
+      from {
+        width: 0%
+      }
+
+      to {
+        width: 90%
+      }
+    }
+
+    .fade-in {
+      animation: fadeIn 0.5s ease forwards;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(16px)
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0)
+      }
+    }
+
+    /* Bar fill animation */
+    .bar-fill {
+      animation: barGrow 1s ease forwards;
+    }
+
+    @keyframes barGrow {
+      from {
+        width: 0%
+      }
+
+      to {
+        width: var(--w)
+      }
+    }
+
+    ::-webkit-scrollbar {
+      width: 5px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(99, 102, 241, 0.4);
+      border-radius: 3px;
+    }
+
+    /* Light mode */
+    html:not(.dark) body {
+      background: #F1F5F9;
+      color: #1E293B;
+    }
+
+    html:not(.dark) .glass {
+      background: rgba(255, 255, 255, 0.8);
+      border-color: rgba(99, 102, 241, 0.15);
+    }
+
+    html:not(.dark) p,
+    html:not(.dark) span {
+      color: inherit;
+    }
+  </style>
+</head>
+
+<body
+  class="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100 transition-colors duration-300">
+
+  <!-- Background blobs -->
+  <div class="fixed inset-0 pointer-events-none overflow-hidden">
+    <div
+      class="absolute -top-48 -left-48 w-[500px] h-[500px] rounded-full bg-indigo-600/10 blur-3xl animate-pulse-slow">
+    </div>
+    <div
+      class="absolute -bottom-48 -right-48 w-[500px] h-[500px] rounded-full bg-cyan-500/10 blur-3xl animate-pulse-slow"
+      style="animation-delay:1.5s"></div>
+  </div>
+
+  <!-- NAVBAR -->
+  <nav class="relative z-10 flex items-center justify-between px-6 py-4 border-b border-white/5 glass">
+    <div class="flex items-center gap-3">
+      <div
+        class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+      </div>
+      <div>
+        <h1 class="font-bold text-lg leading-none">AI Energy Predictor</h1>
+        <p class="text-xs text-slate-400 mt-0.5">Campus Consumption Forecasting</p>
+      </div>
+    </div>
+    <button onclick="toggleTheme()"
+      class="flex items-center gap-2 px-4 py-2 rounded-xl glass border border-white/10 hover:border-indigo-500/50 transition-all text-sm font-medium">
+      <svg id="sunIcon" class="w-4 h-4 text-amber-400 hidden" fill="currentColor" viewBox="0 0 20 20">
+        <path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0z" />
+      </svg>
+      <svg id="moonIcon" class="w-4 h-4 text-indigo-300" fill="currentColor" viewBox="0 0 20 20">
+        <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+      </svg>
+      <span id="themeLabel">Light Mode</span>
+    </button>
+  </nav>
+
+  <!-- MAIN -->
+  <main class="relative z-10 max-w-6xl mx-auto px-4 py-10 space-y-8">
+
+    <!-- Hero -->
+    <div class="text-center space-y-3">
+      <div
+        class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass border border-white/10 text-xs text-indigo-300 font-medium">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        Linear Regression · ARIMA · Random Forest
+      </div>
+      <h2 class="text-5xl font-black gradient-text">Predict Energy Usage</h2>
+      <p class="text-slate-400 max-w-lg mx-auto">Upload your campus energy CSV and get an instant AI-powered <strong
+          class="text-emerald-400">7-day forecast</strong>, anomaly detection &amp; model comparison.</p>
+    </div>
+
+    <!-- ── UPLOAD CARD ── -->
+    <div class="glass rounded-2xl p-8 shadow-2xl">
+      <h3 class="text-lg font-semibold mb-5 flex items-center gap-2">
+        <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+        </svg>
+        Upload Dataset
+      </h3>
+
+      <!-- Drop zone -->
+      <div id="dropZone" class="drop-zone rounded-xl p-10 text-center cursor-pointer hover:bg-indigo-500/5"
+        onclick="document.getElementById('csvInput').click()" ondragover="onDragOver(event)"
+        ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+        <input type="file" id="csvInput" accept=".csv" class="hidden" onchange="onFileSelect(event)" />
+        <div class="animate-float">
+          <svg class="w-14 h-14 mx-auto mb-3 text-indigo-400/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+              d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        </div>
+        <p id="dropText" class="text-slate-300 font-semibold">Drag &amp; drop your CSV here</p>
+        <p class="text-slate-500 text-sm mt-1">
+          or click to browse · Requires
+          <code class="bg-indigo-500/20 px-1.5 rounded text-indigo-300">Date</code> and
+          <code class="bg-indigo-500/20 px-1.5 rounded text-indigo-300">KWH</code> columns
+        </p>
+      </div>
+
+      <!-- File info row -->
+      <div id="fileInfo"
+        class="hidden mt-4 flex items-center justify-between p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/25">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-lg bg-indigo-500/20 flex items-center justify-center">
+            <svg class="w-5 h-5 text-indigo-400" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm4 18H6V4h7v5h5v11z" />
+            </svg>
+          </div>
+          <div>
+            <p id="fileName" class="text-sm font-semibold text-slate-200"></p>
+            <p id="fileSize" class="text-xs text-slate-500"></p>
+          </div>
+        </div>
+        <button onclick="resetFile()" class="text-slate-500 hover:text-red-400 transition-colors p-1">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Predict button -->
+      <button id="predictBtn" onclick="runPrediction()" disabled class="mt-5 w-full py-4 rounded-xl font-bold text-white text-lg
+                     bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500
+                     transition-all shadow-lg shadow-indigo-500/25
+                     disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none
+                     flex items-center justify-center gap-2">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+        </svg>
+        Run AI Prediction &amp; Get 7-Day Forecast
+      </button>
+
+      <!-- Error box -->
+      <div id="errorBox"
+        class="hidden mt-4 p-4 rounded-xl bg-red-500/15 border border-red-500/30 flex items-start gap-3">
+        <svg class="w-5 h-5 text-red-400 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+        </svg>
+        <p id="errorText" class="text-red-300 text-sm leading-relaxed"></p>
+      </div>
+    </div>
+
+    <!-- ── LOADING ── -->
+    <div id="loadingSection" class="hidden glass rounded-2xl p-12 text-center">
+      <div class="loader-ring mx-auto mb-5"></div>
+      <h3 class="text-xl font-bold mb-2">Analyzing &amp; Forecasting…</h3>
+      <p class="text-slate-400 text-sm mb-6">Training 3 ML models · Detecting anomalies · Building 7-day forecast</p>
+      <div class="w-full bg-slate-700/50 rounded-full h-2 overflow-hidden">
+        <div class="progress-fill h-full bg-gradient-to-r from-indigo-500 to-cyan-500 rounded-full"></div>
+      </div>
+      <div class="mt-3 flex justify-center gap-8 text-xs text-slate-500">
+        <span>📈 Linear Regression</span><span>📉 ARIMA</span><span>🌲 Random Forest</span>
+      </div>
+    </div>
+
+    <!-- ══ RESULTS ══ -->
+    <div id="resultsSection" class="hidden space-y-8 fade-in">
+
+      <!-- 1. BEST MODEL CARD -->
+      <div
+        class="glass rounded-2xl p-8 border border-indigo-500/30 bg-gradient-to-r from-indigo-600/10 to-cyan-600/10 text-center">
+        <p class="text-slate-400 text-sm mb-1">🏆 Best Performing Model</p>
+        <h2 id="bestModelName" class="text-4xl font-black gradient-text mb-5"></h2>
+        <div class="flex justify-center gap-10 flex-wrap">
+          <div>
+            <p class="text-xs text-slate-500 mb-1">MAE</p>
+            <p id="bestMAE" class="text-2xl font-bold text-amber-400"></p>
+            <p class="text-xs text-slate-600 mt-0.5">KWH</p>
+          </div>
+          <div>
+            <p class="text-xs text-slate-500 mb-1">RMSE</p>
+            <p id="bestRMSE" class="text-2xl font-bold text-violet-400"></p>
+            <p class="text-xs text-slate-600 mt-0.5">KWH</p>
+          </div>
+          <div>
+            <p class="text-xs text-slate-500 mb-1">R² Score</p>
+            <p id="bestR2" class="text-2xl font-bold text-emerald-400"></p>
+            <p class="text-xs text-slate-600 mt-0.5">accuracy</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. 7-DAY FORECAST (highlighted, shown first) -->
+      <div id="forecastSection"
+        class="rounded-2xl p-8 border-2 border-emerald-500/50 bg-gradient-to-br from-slate-900 to-emerald-950/30 shadow-2xl shadow-emerald-500/10">
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-6 flex-wrap gap-4">
+          <div class="flex items-center gap-3">
+            <div
+              class="w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/40">
+              <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <div>
+              <h3 class="text-2xl font-black text-white">📅 7-Day Energy Forecast</h3>
+              <p id="forecastSubtitle" class="text-xs text-slate-400">Next 7 days predicted consumption</p>
+            </div>
+          </div>
+          <div class="text-right">
+            <p class="text-xs text-slate-500">7-Day Average</p>
+            <p id="avgForecast" class="text-3xl font-black text-emerald-400"></p>
+            <p class="text-xs text-slate-500 -mt-0.5">KWH / day</p>
+          </div>
+        </div>
+
+        <!-- Day cards grid -->
+        <div class="grid grid-cols-7 gap-2 mb-6" id="forecastCards"></div>
+
+        <!-- Horizontal bar chart -->
+        <div class="space-y-2.5" id="forecastBars"></div>
+
+        <!-- Download button inside forecast section -->
+        <div class="mt-6 flex items-center justify-between flex-wrap gap-4 pt-5 border-t border-white/8">
+          <p class="text-xs text-slate-500">Forecast generated using the best model. Weekend days highlighted in amber.
+          </p>
+          <a href="/download" class="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600
+                    hover:from-emerald-500 hover:to-cyan-500 text-white text-sm font-bold transition-all shadow-md">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            Download Forecast CSV
+          </a>
+        </div>
+      </div>
+
+      <!-- 3. QUICK STATS ROW -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="glass rounded-2xl p-5 text-center">
+          <p class="text-xs text-slate-500 mb-1">Next Day</p>
+          <p id="nextDayDate" class="text-xs text-slate-400 mb-1"></p>
+          <p id="nextDayKWH" class="text-3xl font-black text-cyan-400"></p>
+          <p class="text-xs text-slate-500 mt-1">KWH predicted</p>
+        </div>
+        <div class="glass rounded-2xl p-5 text-center border border-red-500/20">
+          <p class="text-xs text-slate-500 mb-1">Anomalies Found</p>
+          <p id="anomalyCount" class="text-3xl font-black text-red-400"></p>
+          <p id="anomalyRange" class="text-xs text-slate-500 mt-1"></p>
+        </div>
+        <div class="glass rounded-2xl p-5 text-center">
+          <p class="text-xs text-slate-500 mb-1">Dataset Records</p>
+          <p id="totalRows" class="text-3xl font-black text-indigo-400"></p>
+          <p class="text-xs text-slate-500 mt-1">rows cleaned</p>
+        </div>
+        <div class="glass rounded-2xl p-5 text-center">
+          <p class="text-xs text-slate-500 mb-1">Date Range</p>
+          <p id="dateFrom" class="text-sm font-bold text-slate-300"></p>
+          <p class="text-xs text-slate-500 my-0.5">to</p>
+          <p id="dateTo" class="text-sm font-bold text-slate-300"></p>
+        </div>
+      </div>
+
+      <!-- 4. MODEL COMPARISON TABLE -->
+      <div class="glass rounded-2xl p-6">
+        <h3 class="font-bold mb-5 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-indigo-400"></span> Model Performance Comparison
+        </h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-white/10">
+                <th class="py-3 px-4 text-left text-slate-400 font-medium">Model</th>
+                <th class="py-3 px-4 text-right text-amber-400 font-medium">MAE ↓</th>
+                <th class="py-3 px-4 text-right text-violet-400 font-medium">RMSE ↓</th>
+                <th class="py-3 px-4 text-right text-emerald-400 font-medium">R² Score ↑</th>
+                <th class="py-3 px-4 text-center text-slate-400 font-medium">Rank</th>
+              </tr>
+            </thead>
+            <tbody id="modelTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 5. ACTUAL vs PREDICTED CHART -->
+      <div class="glass rounded-2xl p-6">
+        <h3 class="font-bold mb-4 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-cyan-400"></span> Actual vs Predicted (Test Period)
+        </h3>
+        <div id="mainChart"></div>
+      </div>
+
+      <!-- 6. MODEL ACCURACY CHART -->
+      <div class="glass rounded-2xl p-6">
+        <h3 class="font-bold mb-4 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-amber-400"></span> Model Accuracy Comparison
+        </h3>
+        <div id="compareChart"></div>
+      </div>
+
+      <!-- 7. ANOMALY DETECTION -->
+      <div class="glass rounded-2xl p-6">
+        <h3 class="font-bold mb-4 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-red-400"></span> Anomaly Detection (Mean ± 2σ)
+        </h3>
+        <div id="anomalyChart"></div>
+        <div id="anomalyList" class="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+      </div>
+
+      <!-- 8. DATASET OVERVIEW -->
+      <div class="glass rounded-2xl p-6">
+        <h3 class="font-bold text-sm text-slate-400 uppercase tracking-wider mb-4">Dataset Overview</h3>
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4" id="datasetGrid"></div>
+      </div>
+
+    </div><!-- /resultsSection -->
+  </main>
+
+  <footer class="relative z-10 mt-16 py-5 border-t border-white/5 text-center text-slate-600 text-xs">
+    AI Energy Consumption Predictor &nbsp;·&nbsp; Flask &amp; Python ML &nbsp;·&nbsp; Linear Regression · ARIMA · Random
+    Forest
+  </footer>
+
+  <!-- ═══════════════════ JAVASCRIPT ═══════════════════ -->
+  <script>
+    /* ── State ── */
+    let selectedFile = null;
+
+    /* ── Theme ── */
+    function toggleTheme() {
+      const isDark = document.documentElement.classList.toggle('dark');
+      document.getElementById('sunIcon').classList.toggle('hidden', isDark);
+      document.getElementById('moonIcon').classList.toggle('hidden', !isDark);
+      document.getElementById('themeLabel').textContent = isDark ? 'Light Mode' : 'Dark Mode';
+    }
+
+    /* ── Drag-and-drop ── */
+    function onDragOver(e) { e.preventDefault(); document.getElementById('dropZone').classList.add('dragging'); }
+    function onDragLeave() { document.getElementById('dropZone').classList.remove('dragging'); }
+    function onDrop(e) {
+      e.preventDefault();
+      document.getElementById('dropZone').classList.remove('dragging');
+      const f = e.dataTransfer.files[0];
+      if (f) applyFile(f);
+    }
+    function onFileSelect(e) { const f = e.target.files[0]; if (f) applyFile(f); }
+
+    function applyFile(file) {
+      if (!file.name.toLowerCase().endsWith('.csv')) {
+        showError('Invalid file type. Please upload a .csv file.');
+        return;
+      }
+      selectedFile = file;
+      document.getElementById('dropText').textContent = '✅ File ready!';
+      document.getElementById('fileName').textContent = file.name;
+      document.getElementById('fileSize').textContent = (file.size / 1024).toFixed(1) + ' KB';
+      document.getElementById('fileInfo').classList.remove('hidden');
+      document.getElementById('predictBtn').disabled = false;
+      hideError();
+    }
+
+    function resetFile() {
+      selectedFile = null;
+      document.getElementById('csvInput').value = '';
+      document.getElementById('fileInfo').classList.add('hidden');
+      document.getElementById('predictBtn').disabled = true;
+      document.getElementById('dropText').textContent = 'Drag & drop your CSV here';
+    }
+
+    /* ── Error helpers ── */
+    function showError(msg) {
+      document.getElementById('errorText').textContent = msg;
+      document.getElementById('errorBox').classList.remove('hidden');
+    }
+    function hideError() { document.getElementById('errorBox').classList.add('hidden'); }
+
+    /* ── Run Prediction ── */
+    async function runPrediction() {
+      if (!selectedFile) return;
+      hideError();
+      document.getElementById('resultsSection').classList.add('hidden');
+      document.getElementById('loadingSection').classList.remove('hidden');
+      document.getElementById('predictBtn').disabled = true;
+
+      const fd = new FormData();
+      fd.append('file', selectedFile);
+
+      try {
+        const res = await fetch('/upload', { method: 'POST', body: fd });
+        const data = await res.json();
+
+        if (!res.ok || data.status === 'error') {
+          showError(data.message || 'Prediction failed. Please try again.');
+          return;
+        }
+        renderResults(data);
+
+      } catch (err) {
+        showError('Cannot reach server. Make sure Flask is running on port 5000.');
+      } finally {
+        document.getElementById('loadingSection').classList.add('hidden');
+        document.getElementById('predictBtn').disabled = false;
+      }
+    }
+
+    /* ══════════════════════════════════════════════════════
+       RENDER RESULTS
+    ══════════════════════════════════════════════════════ */
+    function renderResults(data) {
+      const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+      /* ── 1. Best model ── */
+      const bm = data.best_metrics;
+      document.getElementById('bestModelName').textContent = data.best_model;
+      document.getElementById('bestMAE').textContent = bm.mae.toFixed(2);
+      document.getElementById('bestRMSE').textContent = bm.rmse.toFixed(2);
+      document.getElementById('bestR2').textContent = bm.r2.toFixed(4);
+
+      /* ── 2. 7-Day Forecast cards ── */
+      const fc = data.forecast;
+      const maxKWH = Math.max(...fc.map(f => f.kwh));
+      const avgKWH = (fc.reduce((s, f) => s + f.kwh, 0) / fc.length).toFixed(1);
+      document.getElementById('avgForecast').textContent = avgKWH;
+      document.getElementById('forecastSubtitle').textContent =
+        `Predicted by ${data.best_model} · Starting ${fc[0]?.date}`;
+
+      document.getElementById('forecastCards').innerHTML = fc.map((f, i) => {
+        const d = new Date(f.date + 'T00:00:00');
+        const day = DAY_NAMES[d.getDay()];
+        const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+        const isFirst = i === 0;
+        return `
+      <div class="rounded-xl p-3 text-center border transition-all hover:scale-105 cursor-default
+        ${isFirst ? 'bg-gradient-to-b from-emerald-500/25 to-cyan-500/20 border-2 border-emerald-400/60 shadow-lg shadow-emerald-500/20'
+            : isWeekend ? 'bg-amber-500/8 border-amber-400/25'
+              : 'bg-white/4 border-white/10'}">
+        <p class="text-xs font-bold mb-0.5 ${isFirst ? 'text-emerald-300' : isWeekend ? 'text-amber-400' : 'text-slate-400'}">${day}</p>
+        <p class="text-xs text-slate-500 mb-2">${f.date.slice(5)}</p>
+        <p class="text-2xl font-black ${isFirst ? 'text-emerald-300' : 'text-cyan-400'}">${Math.round(f.kwh)}</p>
+        <p class="text-xs text-slate-500 mt-0.5">KWH</p>
+        ${isFirst ? '<span class="mt-1 inline-block text-xs bg-emerald-500/25 text-emerald-300 px-2 py-0.5 rounded-full font-bold">▶ NEXT</span>' : ''}
+      </div>`;
+      }).join('');
+
+      /* ── 2b. Bar chart ── */
+      document.getElementById('forecastBars').innerHTML = fc.map((f, i) => {
+        const d = new Date(f.date + 'T00:00:00');
+        const day = DAY_NAMES[d.getDay()];
+        const pct = ((f.kwh / maxKWH) * 100).toFixed(1);
+        const isFirst = i === 0;
+        return `
+      <div class="flex items-center gap-3">
+        <span class="text-xs text-slate-400 w-8 shrink-0">${day}</span>
+        <div class="flex-1 bg-white/5 rounded-full h-6 overflow-hidden">
+          <div class="h-full rounded-full ${isFirst ? 'bg-gradient-to-r from-emerald-400 to-cyan-400' : 'bg-gradient-to-r from-indigo-500 to-cyan-500'}
+                      flex items-center justify-end px-3 bar-fill"
+               style="--w:${pct}%; width:${pct}%">
+            <span class="text-xs font-bold text-white">${Math.round(f.kwh)}</span>
+          </div>
+        </div>
+        <span class="text-xs text-slate-500 w-16 text-right shrink-0">${f.date}</span>
+      </div>`;
+      }).join('');
+
+      /* ── 3. Quick stats ── */
+      const nd = data.next_day;
+      document.getElementById('nextDayDate').textContent = nd?.date || '—';
+      document.getElementById('nextDayKWH').textContent = nd ? Math.round(nd.kwh) : '—';
+      const an = data.anomalies;
+      document.getElementById('anomalyCount').textContent = an.count;
+      document.getElementById('anomalyRange').textContent = `${an.lower_limit}–${an.upper_limit} KWH`;
+      document.getElementById('totalRows').textContent = data.dataset_info.total_rows;
+      document.getElementById('dateFrom').textContent = data.dataset_info.date_from;
+      document.getElementById('dateTo').textContent = data.dataset_info.date_to;
+
+      /* ── 4. Model table ── */
+      const sorted = [...data.models].sort((a, b) => a.rmse - b.rmse);
+      const medals = ['🥇', '🥈', '🥉'];
+      document.getElementById('modelTable').innerHTML = sorted.map((m, i) => {
+        const best = m.model === data.best_model;
+        return `<tr class="border-b border-white/5 hover:bg-white/3 transition-colors ${best ? 'bg-indigo-500/8' : ''}">
+      <td class="py-3 px-4 font-semibold ${best ? 'text-indigo-300' : 'text-slate-200'}">${best ? '⭐ ' : ''}${m.model}</td>
+      <td class="py-3 px-4 text-right text-amber-400">${m.mae.toFixed(2)}</td>
+      <td class="py-3 px-4 text-right text-violet-400">${m.rmse.toFixed(2)}</td>
+      <td class="py-3 px-4 text-right text-emerald-400">${m.r2.toFixed(4)}</td>
+      <td class="py-3 px-4 text-center text-lg">${medals[i] || ''}</td>
+    </tr>`;
+      }).join('');
+
+      /* ── 5. Plotly charts ── */
+      plotChart('mainChart', JSON.parse(data.charts.main_chart));
+      plotChart('compareChart', JSON.parse(data.charts.compare_chart));
+      plotChart('anomalyChart', JSON.parse(data.charts.anomaly_chart));
+
+      /* ── 6. Anomaly list ── */
+      if (an.anomalies?.length) {
+        document.getElementById('anomalyList').innerHTML = an.anomalies.map(a => `
+      <div class="flex items-center gap-3 p-3 rounded-xl
+        ${a.type === 'HIGH' ? 'bg-red-500/10 border border-red-500/25' : 'bg-orange-500/10 border border-orange-500/25'}">
+        <span class="text-lg">${a.type === 'HIGH' ? '📈' : '📉'}</span>
+        <div>
+          <p class="text-sm font-semibold">${a.date}</p>
+          <p class="text-xs ${a.type === 'HIGH' ? 'text-red-400' : 'text-orange-400'}">${a.kwh} KWH · ${a.type}</p>
+        </div>
+      </div>`).join('');
+      } else {
+        document.getElementById('anomalyList').innerHTML =
+          '<p class="col-span-full text-center text-slate-500 text-sm">No anomalies detected.</p>';
+      }
+
+      /* ── 7. Dataset overview ── */
+      const di = data.dataset_info;
+      document.getElementById('datasetGrid').innerHTML = [
+        { l: 'Records', v: di.total_rows },
+        { l: 'From', v: di.date_from },
+        { l: 'To', v: di.date_to },
+        { l: 'Min KWH', v: di.kwh_min, c: 'text-cyan-400' },
+        { l: 'Max KWH', v: di.kwh_max, c: 'text-amber-400' },
+        { l: 'Avg KWH', v: di.kwh_mean, c: 'text-emerald-400' },
+      ].map(x => `
+    <div class="text-center p-3 rounded-xl bg-white/5">
+      <p class="text-xs text-slate-500 mb-1">${x.l}</p>
+      <p class="font-bold text-sm ${x.c || 'text-slate-200'}">${x.v}</p>
+    </div>`).join('');
+
+      /* ── Reveal & scroll to forecast ── */
+      document.getElementById('resultsSection').classList.remove('hidden');
+      setTimeout(() => {
+        document.getElementById('forecastSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    }
+
+    /* ── Plotly render helper ── */
+    function plotChart(id, fig) {
+      const layout = {
+        ...fig.layout,
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: { color: '#CBD5E1', family: 'Inter' },
+      };
+      Plotly.newPlot(id, fig.data, layout, {
+        responsive: true, displaylogo: false,
+        modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+      });
+    }
+  </script>
+</body>
+
+</html>
